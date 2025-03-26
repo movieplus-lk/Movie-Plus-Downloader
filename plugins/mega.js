@@ -1,16 +1,13 @@
-const { cmd, commands } = require("../command");
-const fetch = require("node-fetch");
-const { fetchJson } = require("../lib/functions");
-const axios = require("axios");
-const cheerio = require("cheerio");
-const mega = require('mega');
+const { cmd } = require("../command");
+const { MegaCmd } = require("@winkgroup/mega"); // Import MegaCmd from the library
+const fs = require("fs");
 
 cmd(
   {
     pattern: "get",
-    desc: "kok",
+    desc: "Mega File Downloader",
     category: "pp",
-    use: "/start < Text >",
+    use: "/start <Mega File URL>",
     filename: __filename,
   },
   async (
@@ -40,79 +37,51 @@ cmd(
       isBotAdmins,
       isAdmins,
       reply,
-    },
+    }
   ) => {
     try {
-      let data = await fetchJson(
-        `http://links.server.moviepluslk.xyz/api.php?slug=${q}`,
+      const megaUrl = q; // Get the Mega URL passed by the user
+
+      // Initialize MegaCmd with a unique locking word for concurrent access
+      const megaCmd = await MegaCmd.get('movieLock');
+
+      // Log in to Mega (replace with your Mega credentials)
+      const loginResult = await megaCmd.login('your-email@mail.com', 'your-password');
+      
+      if (!loginResult) {
+        return reply("⚠️ Failed to login to Mega. Please check your credentials.");
+      }
+
+      // Use MegaCmd to get the file from the given URL
+      const remotePath = megaUrl;  // Mega file path from the URL
+      const localPath = `./downloads/${remotePath.split('/').pop()}`;  // Save to local downloads folder
+      
+      const onTransfer = new EventEmitter();
+      onTransfer.on('progress', (data) => {
+        console.log(`${data.bytes} of ${data.totalBytes} (${data.percentage}%) transferred`);
+      });
+
+      // Start downloading the file
+      await megaCmd.get(remotePath, localPath, { onTransfer });
+
+      // Once downloaded, send the file to the user
+      await conn.sendMessage(
+        from,
+        {
+          document: fs.createReadStream(localPath),
+          caption: `*Download Complete:* ${remotePath.split('/').pop()}`,
+          mimetype: "application/octet-stream",
+          fileName: `🎬MOVIEPLUS🎬 ${remotePath.split('/').pop()}`,
+        },
+        { quoted: mek }
       );
-      if (!data || !Array.isArray(data) || data.length === 0) {
-        return reply("⚠️ File එක සොයාගත නොහැකි විය ⚠️\n\nමෙයට හේතුව විය හැක්කේ ටොකන් එක කල් ඉකුත් වීමයි,Download පිටුව Reload කර නැවත උත්සහ කරන්න,එහෙම කරලත් වැඩ නැත්තම් 0768480793 ට දන්වන්න\n\n> ❯⏤͟͟͞͞★𝗠𝗢𝗩𝗜𝗘🇵 🇱 🇺 🇸 ☆❯⏤͟͟͞͞");
-      }
 
-      let fileInfo = data[0];
-
-      let size = fileInfo.file_size;
-      let downloadlink = fileInfo.mega_link; // Assuming you now have MEGA link in the API response
-      let title = fileInfo.file_name;
-
-      let message = `- 📁 \`File Name\` : ${title}
-- 📈 \`File Size\` : ${size}
-
-✅ *ඔබට අවශ්‍ය වීඩියො පිටපත Upload කරමින් පවතී* ✅
-- *තවත් පරිශීලකයින්ට විඩියො පිටපත් Upload කරමින් පවතී*
-- *ඔබගේ අවස්තාව එන තෙක් කරුණාකර රැදී සිටින්න*
-
-> ❯⏤͟͟͞͞★𝗠𝗢𝗩𝗜𝗘🇵 🇱 🇺 🇸 ☆❯⏤͟͟͞͞`;
-
-      let message2 = `- 📁 \`File Name\` : ${title}
-- 📈 \`File Size\` : ${size}
-
-❌ *සමාවෙන්න මෙම විඩියො පිටපත 2GB කට වඩා වැඩියි, එම නිසා උඩුගත කළ නොහැක, අපහසු තාවය පිළිබඳව සමාවෙන්න..*
-
-> ❯⏤͟͟͞͞★𝗠𝗢𝗩𝗜𝗘🇵 🇱 🇺 🇸 ☆❯⏤͟͟͞͞`;
-
-      const fileSizeInGB = parseFloat(size);
-
-      if (fileSizeInGB > 2) {
-        await conn.sendMessage(from, { text: message2 }, { quoted: mek });
-        await conn.sendMessage(from, { react: { text: "❌", key: mek.key } });
-      } else {
-        await conn.sendMessage(from, { text: message }, { quoted: mek });
-        await conn.sendMessage(from, { react: { text: "📥", key: mek.key } });
-        await conn.sendMessage(from, { react: { text: "📤", key: mek.key } });
-        let links = await convertDownloadToMegaLink(downloadlink);
-        await conn.sendMessage(
-          from,
-          {
-            document: { url: links },
-            caption: `*${title}*\n\n> *❯⏤͟͟͞͞★𝗠𝗢𝗩𝗜𝗘🇵 🇱 🇺 🇸 ☆❯⏤͟͟͞͞*`,
-            mimetype: "video/mp4",
-            fileName: `🎬MOVIEPLUS🎬 ${title}.mp4`,
-          },
-          { quoted: mek },
-        );
-        await conn.sendMessage(from, { react: { text: "✅", key: mek.key } });
-      }
+      // Clean up after sending the file
+      fs.unlinkSync(localPath); // Delete the file after sending
+      await megaCmd.logout();
     } catch (e) {
       console.log(e);
       await conn.sendMessage(from, { react: { text: "❌", key: mek.key } });
     }
-  },
-);
-
-async function convertDownloadToMegaLink(downloadLink) {
-  // Use MEGA.nz SDK to handle the link
-  try {
-    const client = mega({
-      email: 'your_email@example.com', // Replace with actual MEGA account email
-      password: 'your_password' // Replace with actual MEGA account password
-    });
-
-    const file = await client.download(downloadLink);
-    return file.link; // This would be the download URL from MEGA
-  } catch (error) {
-    console.log('Error with MEGA download:', error);
-    return "Invalid MEGA link";
   }
-}
+);
