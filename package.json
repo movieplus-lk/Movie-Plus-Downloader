@@ -23,6 +23,7 @@
     "megajs": "latest",
     "vm": "latest",
     "qrcode-terminal": "latest",
+    "@winkgroup/mega": "latest",
     "cheerio":"latest"
   }
 }
